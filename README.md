@@ -188,10 +188,6 @@ Add separate MCP server entries for each WordPress site:
 - Application Passwords can be revoked at any time from WordPress admin
 - The server acts as a transparent proxy — no data is cached or logged
 
-## Self-Hosting
-
-If you prefer to run your own instance, see the [self-hosted documentation](https://github.com/lwplugins/mcp.lwplugins.com).
-
 ## Disclaimer
 
 This service is provided "as is", without warranty of any kind. Use it at your own risk. The authors are not responsible for any data loss, security incidents, or damages resulting from the use of this service. Always create backups before performing destructive operations. By using this service, you acknowledge that you are solely responsible for any actions performed on your WordPress sites through this MCP server.
