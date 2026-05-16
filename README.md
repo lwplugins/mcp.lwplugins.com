@@ -4,11 +4,14 @@ Manage any WordPress site with AI through a hosted MCP server at **`https://mcp.
 
 No self-hosting required — connect any MCP-compatible client directly to our endpoint with your WordPress credentials.
 
+> **Auto-discovery (v2.0):** every ability registered in your WordPress instance via the Abilities API automatically becomes an MCP tool. Install a new plugin that ships abilities (e.g. `lw-site-manager-extra`) — its tools appear on the next reconnect without any server-side change. See [CHANGELOG.md](CHANGELOG.md) for version history.
+
 ## Requirements
 
 - **WordPress 6.9+** with the [Abilities API](https://developer.wordpress.org/reference/)
 - **[LW Site Manager](https://github.com/lwplugins/lw-site-manager)** plugin installed and activated
 - **Application Password** created (Users → Edit User → Application Passwords)
+- *(Optional)* **[LW Site Manager Extra](https://github.com/lwplugins/lw-site-manager-extra)** for premium-plugin abilities (FluentForm, more coming)
 
 ## Quick Start
 
@@ -97,6 +100,7 @@ https://mcp.lwplugins.com/mcp?wp_url=https://yoursite.com&wp_user=your-username&
 "Create a new post titled Hello World"
 "Check for available updates"
 "Show me the latest WooCommerce orders"
+"List Fluent Forms submissions from the last week"
 ```
 
 ## Authentication
@@ -112,7 +116,7 @@ Credentials are passed via HTTP headers (preferred) or query parameters — they
 | Query | `wp_user` | WordPress username |
 | Query | `wp_api_key` | Application Password |
 
-Headers take priority over query params. The `tools/list` endpoint works without credentials.
+Headers take priority over query params. The `tools/list` endpoint works without credentials (returns an empty list until credentials are provided).
 
 ## Multiple Sites
 
@@ -143,43 +147,53 @@ Add separate MCP server entries for each WordPress site:
 }
 ```
 
-## Available Tools (16 tools, 117 actions)
+## Available Tools (auto-discovery)
 
-### WordPress Core
+The tool list is **dynamic** — it is generated on each session from the abilities your WordPress site exposes via `/wp-abilities/v1/abilities`. There's no fixed catalogue: install a plugin → its tools appear; uninstall it → they disappear.
 
-| Tool | Actions | Description |
-|------|---------|-------------|
-| `wp_updates` | check, update_plugin, update_theme, update_core, update_all, check_db_updates, update_db, update_all_dbs, get_db_plugins | Updates management |
-| `wp_plugins` | list, activate, deactivate, install, delete | Plugin management |
-| `wp_themes` | list, activate, install, delete | Theme management |
-| `wp_backup` | create, status, cancel, list, restore, delete | Backup management |
-| `wp_maintenance` | health_check, error_log, optimize_db, cleanup_db, flush_cache | Site maintenance |
+### How tool names are derived
 
-### Content
+The ability name's `/` and `-` characters are replaced with `_`, lowercased:
 
-| Tool | Actions | Description |
-|------|---------|-------------|
-| `wp_posts` | list, get, get_types, create, update, delete, restore, duplicate, bulk, set_terms, get_terms | Posts |
-| `wp_pages` | list, get, create, update, delete, restore, duplicate, hierarchy, reorder, set_homepage, set_posts_page, front_page_settings, templates, set_template | Pages |
-| `wp_comments` | list, get, counts, create, update, delete, approve, spam, bulk | Comments |
-| `wp_media` | list, get, upload, update, delete | Media library |
+| Ability name | MCP tool name |
+|---|---|
+| `site-manager/list-posts` | `site_manager_list_posts` |
+| `site-manager/ff-update-form` | `site_manager_ff_update_form` |
+| `core/get-site-info` | `core_get_site_info` |
+| `hellopack/check-updates` | `hellopack_check_updates` |
 
-### Data
+### Method routing (transparent to you)
 
-| Tool | Actions | Description |
-|------|---------|-------------|
-| `wp_users` | list, get, create, update, delete, reset_password, get_roles | Users |
-| `wp_taxonomy` | list_categories, get_category, create_category, update_category, delete_category, list_tags, get_tag, create_tag, update_tag, delete_tag | Taxonomies |
-| `wp_meta` | get_post, set_post, delete_post, get_user, set_user, delete_user, get_term, set_term, delete_term | Meta fields |
-| `wp_settings` | get_general, update_general, get_reading, update_reading, get_discussion, update_discussion, get_permalink, update_permalink | Settings |
+Each ability is invoked with the HTTP method the WP Abilities REST controller expects, based on its annotations:
 
-### WooCommerce
+| Annotation | HTTP method |
+|---|---|
+| `readonly: true` | `GET` (input via query string) |
+| `destructive: true` AND `idempotent: true` | `DELETE` (input via query string) |
+| otherwise | `POST` (input via JSON body) |
 
-| Tool | Actions | Description |
-|------|---------|-------------|
-| `wc_products` | list, get, create, update, delete, duplicate, update_stock, list_categories, list_variations, bulk | Products |
-| `wc_orders` | list, get, update_status, list_statuses, create_refund, list_notes, add_note, bulk | Orders |
-| `wc_reports` | sales, top_sellers, orders_totals, revenue_stats, low_stock, products_totals | Reports |
+On a 405 response, the client retries with the next method advertised by the `Allow` header (and falls back to parsing the error body if the header is stripped by a CDN).
+
+### What you get out of the box
+
+Once **LW Site Manager** is active, you immediately have tools for: WordPress core updates, plugins, themes, backups, site health, posts, pages, comments, media, users, taxonomies, post/user/term meta, settings, and (when WooCommerce is active) products, orders, and reports.
+
+Add **LW Site Manager Extra** to extend the surface with premium-plugin abilities — currently FluentForm (forms, submissions, global settings, modules, Pro integration feeds, payments). More integrations are added there over time.
+
+You can list everything available at runtime by asking the model to call `tools/list`, or via:
+
+```bash
+curl -X POST https://mcp.lwplugins.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "X-WP-URL: https://yoursite.com" \
+  -H "X-WP-USER: your-username" \
+  -H "X-WP-API-KEY: xxxx xxxx xxxx xxxx xxxx xxxx" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+## Discovery cache
+
+Discovered ability lists are cached in memory for 5 minutes per `wpUrl + wpUser` key. After installing a new plugin, the new tools become visible on the next reconnect (or after the cache expires).
 
 ## Security
 
